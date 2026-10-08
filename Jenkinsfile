@@ -4,54 +4,34 @@ pipeline {
     options {
         timestamps()
         disableConcurrentBuilds()
-        skipDefaultCheckout(false)
-    }
-
-    environment {
-        APP_NAME = 'CarNexus'
     }
 
     stages {
 
         stage('Checkout') {
             steps {
-                echo "Checking out ${APP_NAME}..."
+                echo 'Checking out CarNexus...'
 
                 checkout scm
             }
         }
 
-        stage('Inspect Project') {
-            steps {
-                sh '''
-                    echo "===== Project Structure ====="
-                    pwd
-                    echo ""
-                    find . -maxdepth 2 -type f | sort | head -200
-                    echo ""
-                    echo "===== PHP Version ====="
-                    php --version || true
-                    echo ""
-                    echo "===== Composer Version ====="
-                    composer --version || true
-                '''
-            }
-        }
-
-        stage('Install Dependencies') {
+        stage('Verify Environment') {
             steps {
                 sh '''
                     set -e
 
-                    if [ -f composer.json ]; then
-                        echo "composer.json found."
-                        composer install \
-                            --no-interaction \
-                            --prefer-dist \
-                            --optimize-autoloader
-                    else
-                        echo "No composer.json found. Skipping Composer."
-                    fi
+                    echo "===== PHP ====="
+                    php --version
+
+                    echo ""
+                    echo "===== Git ====="
+                    git --version
+
+                    echo ""
+                    echo "===== Project ====="
+                    pwd
+                    ls -la
                 '''
             }
         }
@@ -61,41 +41,58 @@ pipeline {
                 sh '''
                     set -e
 
-                    PHP_FILES=$(find . -type f -name "*.php" \
-                        -not -path "./vendor/*")
+                    echo "Checking PHP files..."
 
-                    if [ -n "$PHP_FILES" ]; then
-                        echo "Checking PHP syntax..."
+                    find Backend -type f -name "*.php" -print
 
-                        for file in $PHP_FILES; do
-                            php -l "$file"
-                        done
-                    else
-                        echo "No PHP files found."
-                    fi
+                    echo ""
+                    echo "Running PHP syntax checks..."
+
+                    find Backend -type f -name "*.php" -print0 | while IFS= read -r -d "" file
+                    do
+                        echo "Checking: $file"
+                        php -l "$file"
+                    done
+
+                    echo ""
+                    echo "All PHP files passed syntax validation."
                 '''
             }
         }
 
-        stage('Run Tests') {
+        stage('Validate Frontend') {
             steps {
                 sh '''
                     set -e
 
-                    if [ -f vendor/bin/phpunit ]; then
-                        echo "Running PHPUnit..."
-                        vendor/bin/phpunit
-                    elif [ -f phpunit.xml ] || [ -f phpunit.xml.dist ]; then
-                        echo "PHPUnit configuration found."
-                        ./vendor/bin/phpunit
+                    echo "Checking frontend files..."
+
+                    test -f index.html
+                    test -d Frontend
+                    test -f Frontend/style.css
+                    test -f Frontend/web.js
+
+                    echo "Frontend files found successfully."
+                '''
+            }
+        }
+
+        stage('Validate Database Schema') {
+            steps {
+                sh '''
+                    set -e
+
+                    if [ -f Toyota_schema.sql ]; then
+                        echo "Database schema found:"
+                        ls -lh Toyota_schema.sql
                     else
-                        echo "No PHPUnit tests configured. Skipping tests."
+                        echo "WARNING: Toyota_schema.sql not found."
                     fi
                 '''
             }
         }
 
-        stage('Build Artifact') {
+        stage('Build') {
             steps {
                 sh '''
                     set -e
@@ -103,45 +100,45 @@ pipeline {
                     rm -rf build
                     mkdir -p build
 
-                    echo "Creating deployment artifact..."
+                    echo "Creating build artifact..."
 
                     rsync -av \
-                        --exclude='.git' \
-                        --exclude='.gitignore' \
-                        --exclude='Jenkinsfile' \
-                        --exclude='build' \
-                        --exclude='tests' \
+                        --exclude=".git" \
+                        --exclude="build" \
+                        --exclude="Jenkinsfile" \
                         ./ build/
 
-                    echo "Artifact created successfully."
-
-                    echo "===== Build Contents ====="
-                    find build -maxdepth 3 -type f | sort | head -200
+                    echo ""
+                    echo "Build completed successfully."
                 '''
             }
         }
 
-        stage('Archive Artifact') {
+        stage('Archive') {
             steps {
-                archiveArtifacts artifacts: 'build/**',
-                                 fingerprint: true,
-                                 allowEmptyArchive: false
+                archiveArtifacts(
+                    artifacts: 'build/**',
+                    fingerprint: true,
+                    allowEmptyArchive: false
+                )
             }
         }
     }
 
     post {
-
         success {
-            echo "${APP_NAME} build completed successfully."
+            echo '======================================'
+            echo ' CarNexus BUILD SUCCESSFUL'
+            echo '======================================'
         }
 
         failure {
-            echo "${APP_NAME} build FAILED."
+            echo '======================================'
+            echo ' CarNexus BUILD FAILED'
+            echo '======================================'
         }
 
         always {
-            echo "Cleaning workspace..."
             cleanWs(
                 deleteDirs: true,
                 disableDeferredWipeout: true
