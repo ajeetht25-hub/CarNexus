@@ -10,80 +10,104 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                echo 'Checking out CarNexus...'
+                echo '========== CHECKOUT =========='
 
-                checkout scm
+                git branch: 'main',
+                    url: 'https://github.com/ajeetht25-hub/CarNexus.git'
             }
         }
 
-        stage('Verify Environment') {
+        stage('Environment Check') {
             steps {
                 sh '''
                     set -e
 
-                    echo "===== PHP ====="
+                    echo "========== ENVIRONMENT =========="
+
+                    echo "PHP:"
                     php --version
 
                     echo ""
-                    echo "===== Git ====="
+                    echo "Git:"
                     git --version
 
                     echo ""
-                    echo "===== Project ====="
+                    echo "Workspace:"
                     pwd
+
+                    echo ""
+                    echo "Project:"
                     ls -la
                 '''
             }
         }
 
-        stage('Validate PHP') {
+        stage('PHP Validation') {
             steps {
                 sh '''
                     set -e
 
-                    echo "Checking PHP files..."
+                    echo "========== PHP VALIDATION =========="
 
-                    find Backend -type f -name "*.php" -print
+                    if [ ! -d Backend ]; then
+                        echo "ERROR: Backend directory not found"
+                        exit 1
+                    fi
 
-                    echo ""
-                    echo "Running PHP syntax checks..."
+                    COUNT=0
 
-                    find Backend -type f -name "*.php" -print0 | while IFS= read -r -d "" file
+                    for file in Backend/*.php
                     do
-                        echo "Checking: $file"
-                        php -l "$file"
+                        if [ -f "$file" ]; then
+                            COUNT=$((COUNT + 1))
+
+                            echo "Checking: $file"
+
+                            php -l "$file"
+                        fi
                     done
 
                     echo ""
-                    echo "All PHP files passed syntax validation."
+                    echo "Validated $COUNT PHP files."
                 '''
             }
         }
 
-        stage('Validate Frontend') {
+        stage('Frontend Validation') {
             steps {
                 sh '''
                     set -e
 
-                    echo "Checking frontend files..."
+                    echo "========== FRONTEND VALIDATION =========="
 
+                    echo "Checking index.html..."
                     test -f index.html
+
+                    echo "Checking Frontend directory..."
                     test -d Frontend
+
+                    echo "Checking CSS..."
                     test -f Frontend/style.css
+
+                    echo "Checking JavaScript..."
                     test -f Frontend/web.js
 
-                    echo "Frontend files found successfully."
+                    echo ""
+                    echo "Frontend validation successful."
                 '''
             }
         }
 
-        stage('Validate Database Schema') {
+        stage('Database Validation') {
             steps {
                 sh '''
                     set -e
 
+                    echo "========== DATABASE VALIDATION =========="
+
                     if [ -f Toyota_schema.sql ]; then
-                        echo "Database schema found:"
+                        echo "Toyota_schema.sql found."
+                        echo "Size:"
                         ls -lh Toyota_schema.sql
                     else
                         echo "WARNING: Toyota_schema.sql not found."
@@ -97,10 +121,12 @@ pipeline {
                 sh '''
                     set -e
 
+                    echo "========== BUILD =========="
+
                     rm -rf build
                     mkdir -p build
 
-                    echo "Creating build artifact..."
+                    echo "Copying project files..."
 
                     rsync -av \
                         --exclude=".git" \
@@ -110,35 +136,50 @@ pipeline {
 
                     echo ""
                     echo "Build completed successfully."
+
+                    echo ""
+                    echo "Build size:"
+                    du -sh build
                 '''
             }
         }
 
         stage('Archive') {
             steps {
+                echo '========== ARCHIVE =========='
+
                 archiveArtifacts(
                     artifacts: 'build/**',
                     fingerprint: true,
                     allowEmptyArchive: false
                 )
+
+                echo 'Build artifact archived successfully.'
             }
         }
     }
 
     post {
+
         success {
-            echo '======================================'
-            echo ' CarNexus BUILD SUCCESSFUL'
-            echo '======================================'
+            echo '''
+========================================
+       CARNEXUS BUILD SUCCESSFUL
+========================================
+'''
         }
 
         failure {
-            echo '======================================'
-            echo ' CarNexus BUILD FAILED'
-            echo '======================================'
+            echo '''
+========================================
+         CARNEXUS BUILD FAILED
+========================================
+'''
         }
 
         always {
+            echo 'Cleaning workspace...'
+
             cleanWs(
                 deleteDirs: true,
                 disableDeferredWipeout: true
